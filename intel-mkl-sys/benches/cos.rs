@@ -1,7 +1,4 @@
-#[macro_use]
-extern crate criterion;
-
-use criterion::Criterion;
+use criterion::{criterion_group, criterion_main, Criterion};
 use rand::distr::{Distribution, Uniform};
 use std::convert::TryFrom;
 
