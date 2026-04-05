@@ -324,9 +324,12 @@ impl Library {
     ///
     /// - Ask to `pkg-config`
     /// - Seek the directory specified by `$MKLROOT` environment variable
+    /// - Seek the directory specified by `$ONEAPI_ROOT` environment variable
     /// - Seek well-known directory
-    ///   - `/opt/intel` for Linux
-    ///   - `C:/Program Files (x86)/IntelSWTools/` and `C:/Program Files (x86)/Intel/oneAPI/` for Windows
+    ///   - `/opt/intel` for Linux (covers both legacy `/opt/intel/mkl` and oneAPI `/opt/intel/oneapi`)
+    ///   - `C:/Program Files (x86)/IntelSWTools/` (legacy Windows installer)
+    ///   - `C:/Program Files (x86)/Intel/oneAPI/` (oneAPI Windows installer, 32-bit host tools)
+    ///   - `C:/Program Files/Intel/oneAPI/` (oneAPI Windows standalone 64-bit installer)
     ///
     pub fn new(config: Config) -> Result<Self> {
         if let Some(lib) = Self::pkg_config(config)? {
@@ -338,10 +341,17 @@ impl Library {
                 return Ok(lib);
             }
         }
+        if let Ok(oneapi_root) = std::env::var("ONEAPI_ROOT") {
+            log::info!("ONEAPI_ROOT environment variable is detected: {}", oneapi_root);
+            if let Some(lib) = Self::seek_directory(config, oneapi_root)? {
+                return Ok(lib);
+            }
+        }
         for path in [
             "/opt/intel",
             "C:/Program Files (x86)/IntelSWTools/",
             "C:/Program Files (x86)/Intel/oneAPI/",
+            "C:/Program Files/Intel/oneAPI/",
         ] {
             let path = Path::new(path);
             if let Some(lib) = Self::seek_directory(config, path)? {
