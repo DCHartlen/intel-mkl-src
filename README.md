@@ -63,6 +63,88 @@ This specify the data model:
 
 Using GNU OpenMP runtime (`libgomp`) is not supported yet. Please see https://github.com/rust-math/intel-mkl-src/issues/97
 
+## Installing Intel MKL on Windows
+
+Install only the MKL component without the full oneAPI toolkit using one of:
+
+**winget (recommended):**
+```
+winget install Intel.oneMKL
+```
+
+**NuGet (for CI or reproducible builds):**
+```
+nuget install intelmkl.devel.win-x64 -Version 2025.3.0
+nuget install intelmkl.static.win-x64 -Version 2025.3.0
+```
+Then set `MKLROOT=<path to the nuget package directory>`.
+
+**Intel online installer:**
+Download from https://www.intel.com/content/www/us/en/developer/tools/oneapi/onemkl.html, select the standalone MKL component only.
+
+If MKL is installed but not detected automatically, set one of:
+```
+MKLROOT=C:\Program Files (x86)\Intel\oneAPI\mkl\latest
+ONEAPI_ROOT=C:\Program Files (x86)\Intel\oneAPI
+```
+
+## Deploying on Windows
+
+This crate only tells the Rust linker where to find MKL at compile time. It does **not** copy DLLs to your output directory. You must ship the required DLLs alongside your `.exe` manually.
+
+### Required DLLs
+
+For configurations using `iomp` (Intel OpenMP), you must ship:
+- `libiomp5md.dll` — Intel OpenMP runtime
+
+For configurations using `dynamic` link type, you must also ship the MKL runtime DLLs (e.g. `mkl_rt.2.dll`).
+
+These are found in your MKL installation under:
+```
+C:\Program Files (x86)\Intel\oneAPI\mkl\latest\redist\intel64\
+C:\Program Files (x86)\Intel\oneAPI\compiler\latest\windows\redist\intel64_win\compiler\
+```
+
+### Simplest deployment: avoid runtime DLL dependencies
+
+Use `mkl-static-ilp64-seq` (sequential, no OpenMP). This statically links all MKL code and requires no MKL or OpenMP DLLs at runtime.
+
+Note: even with `static` + `iomp`, `libiomp5md.dll` cannot be statically linked on Windows with MSVC and will still be required at runtime.
+
+## Python Bindings on Windows
+
+When this crate is used as a dependency of a Rust-based Python extension (e.g. via [PyO3](https://pyo3.rs) and [maturin](https://maturin.rs)), the compiled output is a `.pyd` file rather than an `.exe`. DLL resolution rules still apply, but the search context changes: Windows looks for DLL dependencies relative to the `.pyd` file's directory, not the Python executable.
+
+### Development
+
+`maturin develop` installs the `.pyd` into your active virtual environment's `site-packages`. `libiomp5md.dll` will not be present there, so importing the module will fail unless the MKL redist directory is on your `PATH`:
+
+```
+C:\Program Files (x86)\Intel\oneAPI\compiler\latest\windows\redist\intel64_win\compiler
+```
+
+Adding this to your system or environment `PATH` once after installing MKL is the practical solution for development.
+
+### Deployment (wheels)
+
+Use [`delvewheel`](https://github.com/adang1345/delvewheel) to produce self-contained wheels. It scans the `.pyd` for DLL dependencies, copies them into the wheel under a `.libs\` subdirectory, and patches the loader so users do not need MKL installed.
+
+```powershell
+pip install delvewheel
+maturin build --release
+delvewheel repair target\wheels\*.whl --wheel-dir dist\
+```
+
+Upload the repaired wheel from `dist\` to PyPI or your artifact store. The wheel is fully self-contained.
+
+### DLL resolution summary
+
+| Scenario | Where libiomp5md.dll must be |
+|---|---|
+| `maturin develop` | On `PATH` |
+| Running `.pyd` directly | On `PATH` or in the `.pyd`'s directory |
+| Wheel distribution | Bundled automatically by `delvewheel repair` |
+
 ## License
 MKL is distributed under the Intel Simplified Software License for Intel(R) Math Kernel Library, See [License.txt](License.txt).
 Some wrapper codes are licensed by MIT License (see the header of each file).
